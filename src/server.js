@@ -1,39 +1,26 @@
-
 import express from 'express'
-import { mapOrder } from '~/utils/sorts.js'
+import{CONNECT_DB, GET_DB} from'~/config/mongodb'
 
-const app = express()
+const START_SERVER = () => {
+  const app = express()
+  const hostname = 'localhost'
+  const port = 8017
 
-const hostname = 'localhost'
-const port = 8017
+  app.get('/', async (req, res) => {
+    console.log(await GET_DB().listCollections().toArray())
+    res.send('Hello World!')
+  })
 
-app.get('/', (req, res) => {
-  // Test Absolute import mapOrder
-  console.log(mapOrder(
-    [ { id: 'id-1', name: 'One' },
-      { id: 'id-2', name: 'Two' },
-      { id: 'id-3', name: 'Three' },
-      { id: 'id-4', name: 'Four' },
-      { id: 'id-5', name: 'Five' } ],
-    ['id-5', 'id-4', 'id-2', 'id-3', 'id-1'],
-    'id'
-  ))
-  res.end('<h1>Hello CodeUp</h1><hr>')
-})
+  
+  app.listen(port, hostname, () => {
+    // eslint-disable-next-line no-console
+    console.log(`CodeUp đang được chạy http://${ hostname }:${ port }`)
+  })
+}
 
-app.get('/api', (req, res) => {
-  res.json({ message: 'Hello CodeUp API' })
-})
-app.get('/api/trangchu', (req, res) => {
-  res.json({ message: '' })
-})
-
-app.get('/api/khoahocj', (req, res) => {
-
-})
-
-
-app.listen(port, hostname, () => {
-  // eslint-disable-next-line no-console
-  console.log(`CodeUp đang được chạy ${ hostname }:${ port }`)
+CONNECT_DB() 
+.then(() => console.log('Kết nối tới MongoDB thành công'))
+.then(() => START_SERVER())
+.catch(error => {console.error(error)
+  process.exit(0)
 })
