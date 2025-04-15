@@ -11,16 +11,16 @@ exports.getAllCourses = async (req, res) => {
 };
 
 // Lấy khóa học nổi bật (ví dụ: 4 khóa học mới nhất)
-exports.getFeaturedCourses = async (req, res) => {
-  try {
-    const featuredCourses = await Course.find()
-      .sort({ createdAt: -1 })
-      .limit(4);
-    res.json(featuredCourses);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+// exports.getFeaturedCourses = async (req, res) => {
+//   try {
+//     const featuredCourses = await Course.find()
+//       .sort({ createdAt: -1 })
+//       .limit(4);
+//     res.json(featuredCourses);
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// };
 
 // Tạo khóa học mới (dành cho admin)
 exports.createCourse = async (req, res) => {
