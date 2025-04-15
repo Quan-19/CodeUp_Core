@@ -1,26 +1,25 @@
-import express from 'express'
-import{CONNECT_DB, GET_DB} from'~/config/mongodb'
+require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const courseRoutes = require('./routes/courseRoutes');
 
-const START_SERVER = () => {
-  const app = express()
-  const hostname = 'localhost'
-  const port = 8017
+const app = express();
 
-  app.get('/', async (req, res) => {
-    console.log(await GET_DB().listCollections().toArray())
-    res.send('Hello World!')
-  })
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-  
-  app.listen(port, hostname, () => {
-    // eslint-disable-next-line no-console
-    console.log(`CodeUp đang được chạy http://${ hostname }:${ port }`)
-  })
-}
+// Kết nối MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Đã kết nối với MongoDB'))
+  .catch(err => console.error('Lỗi kết nối MongoDB:', err));
 
-CONNECT_DB() 
-.then(() => console.log('Kết nối tới MongoDB thành công'))
-.then(() => START_SERVER())
-.catch(error => {console.error(error)
-  process.exit(0)
-})
+// Routes
+app.use('/api/courses', courseRoutes);
+
+// Khởi động server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server đang chạy trên cổng ${PORT}`);
+});
