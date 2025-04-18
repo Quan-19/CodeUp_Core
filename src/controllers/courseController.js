@@ -1,43 +1,69 @@
-const Course = require('../models/Course');
+// src/controllers/courseController.js
 
-// Lấy tất cả khóa học
-exports.getAllCourses = async (req, res) => {
+const Course = require("../models/Course");
+
+// GET /api/courses
+exports.getCourses = async (req, res) => {
   try {
-    const courses = await Course.find().sort({ createdAt: -1 });
+    const courses = await Course.find({}, "title price description"); // Chỉ lấy 3 trường
     res.json(courses);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  } catch (error) {
+    res.status(500).json({ error: "Lỗi khi lấy danh sách khóa học" });
   }
 };
 
-// Lấy khóa học nổi bật (ví dụ: 4 khóa học mới nhất)
-// exports.getFeaturedCourses = async (req, res) => {
-//   try {
-//     const featuredCourses = await Course.find()
-//       .sort({ createdAt: -1 })
-//       .limit(4);
-//     res.json(featuredCourses);
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// };
-
-// Tạo khóa học mới (dành cho admin)
-exports.createCourse = async (req, res) => {
-  const course = new Course({
-    title: req.body.title,
-    description: req.body.description,
-    category: req.body.category,
-    level: req.body.level,
-    price: req.body.price,
-    duration: req.body.duration,
-    imageUrl: req.body.imageUrl || 'https://via.placeholder.com/300x200'
-  });
-
+// GET /api/courses/:id
+exports.getCourseById = async (req, res) => {
   try {
-    const newCourse = await course.save();
+    const course = await Course.findById(req.params.id);
+    if (!course) {
+      return res.status(404).json({ error: "Không tìm thấy khóa học" });
+    }
+    res.json(course);
+  } catch (error) {
+    res.status(500).json({ error: "Lỗi khi lấy chi tiết khóa học" });
+  }
+};
+
+// POST /api/courses
+exports.createCourse = async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      category,
+      level,
+      price,
+      duration,
+      imageUrl
+    } = req.body;
+
+    // Kiểm tra các trường bắt buộc
+    if (!title || !description || !category || price == null || !duration) {
+      return res.status(400).json({
+        error: "Vui lòng điền đầy đủ các trường: title, description, category, price, duration."
+      });
+    }
+
+    // Tạo mới khóa học
+    const newCourse = new Course({
+      title,
+      description,
+      category,
+      level,
+      price,
+      duration,
+      imageUrl
+    });
+
+    await newCourse.save();
+
     res.status(201).json(newCourse);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error("Lỗi khi thêm khóa học:", err);
+    res.status(400).json({
+      error: "Không thể thêm khóa học",
+      details: err.message
+    });
   }
 };

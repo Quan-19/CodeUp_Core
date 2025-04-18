@@ -5,10 +5,14 @@ const cors = require('cors');
 const courseRoutes = require('./routes/courseRoutes');
 
 const app = express();
+const authRoutes = require("./routes/authRoutes");
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use("/api/courses", require("./routes/courseRoutes"));
+app.use("/api/auth", authRoutes);
+
 
 // Kết nối MongoDB
 mongoose.connect(process.env.MONGODB_URI)

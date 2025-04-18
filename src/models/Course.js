@@ -29,18 +29,18 @@ const CourseSchema = new mongoose.Schema({
     type: Number, // Số giờ
     required: true
   },
-  // imageUrl: {
-  //   type: String,
-  //   default: 'https://via.placeholder.com/300x200'
-  // },
-  // createdAt: {
-  //   type: Date,
-  //   default: Date.now
-  // },
-  // updatedAt: {
-  //   type: Date,
-  //   default: Date.now
-  // }
+  imageUrl: {
+    type: String,
+    default: 'https://via.placeholder.com/300x200'
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
 module.exports = mongoose.model('Course', CourseSchema);

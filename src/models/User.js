@@ -1,40 +1,39 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+// src/models/User.js
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
 const UserSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    minlength: 4
+  },
   email: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    lowercase: true,
+    trim: true
   },
   password: {
     type: String,
     required: true
-  },
-  role: {
-    type: String,
-    enum: ['student', 'instructor', 'admin'],
-    default: 'student'
-  },
-  profile: {
-    name: String,
-    avatar: String,
-    bio: String,
-    // Thêm các trường khác tùy theo role
-    specialization: { type: String }, // Cho instructor
-    studentId: { type: String }       // Cho student
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   }
 });
 
-// Hash password trước khi lưu
-UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
+// Mã hóa mật khẩu trước khi lưu
+UserSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-module.exports = mongoose.model('User', UserSchema);
+// So sánh mật khẩu
+UserSchema.methods.comparePassword = function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+module.exports = mongoose.model("User", UserSchema);
