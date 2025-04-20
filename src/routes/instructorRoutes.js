@@ -10,5 +10,12 @@ router.use(authenticate, requireRole('instructor'));
 router.post('/courses', instructorController.createCourse);
 router.put('/courses/:courseId/content', instructorController.addCourseContent);
 router.get('/stats', instructorController.getInstructorStats);
-
+router.get('/courses', async (req, res) => {
+  try {
+    const courses = await Course.find();
+    res.json(courses);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi lấy khóa học', error: error.message });
+  }
+});
 module.exports = router;
