@@ -1,4 +1,3 @@
-// src/models/User.js
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
@@ -23,7 +22,7 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
-// Mã hóa mật khẩu trước khi lưu
+// Tự động hash mật khẩu trước khi lưu vào DB
 UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
@@ -31,7 +30,7 @@ UserSchema.pre("save", async function (next) {
   next();
 });
 
-// So sánh mật khẩu
+// Hàm so sánh mật khẩu khi đăng nhập
 UserSchema.methods.comparePassword = function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
