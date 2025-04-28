@@ -19,7 +19,12 @@ const UserSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true
-  }
+  },
+  role: {
+    type: String,
+    enum: ['student', 'instructor', 'admin'],
+    default: 'student', // Mặc định là học viên
+  },
 });
 
 // Tự động hash mật khẩu trước khi lưu vào DB

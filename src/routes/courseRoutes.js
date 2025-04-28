@@ -35,4 +35,18 @@ router.get('/courses/:id', async (req, res) => {
   }
 });
 
+router.post('/courses', async (req, res) => {
+  try {
+    const { title, description, category, level, price, duration, imageUrl } = req.body;
+    const newCourse = new Course({ title, description, category, level, price, duration, imageUrl });
+    console.log("Dữ liệu nhận được từ frontend:", newCourse);
+
+    await newCourse.save();
+    res.status(201).json(newCourse);
+  } catch (err) {
+    console.error("Lỗi khi thêm khóa học:", err); 
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
 module.exports = router;

@@ -4,12 +4,12 @@ const Enrollment = require('../models/Enrollment');
 // Tạo khóa học mới
 exports.createCourse = async (req, res) => {
   try {
-    const instructorId = req.user.id;
-    
+    const instructorId = req.user.id; // Lấy ID người dùng từ middleware authenticate
+
     const courseData = {
       ...req.body,
-      instructor: instructorId,
-      published: false
+      instructor: instructorId, // Gán instructor từ req.user.id
+      published: false,
     };
 
     const course = new Course(courseData);
@@ -17,7 +17,8 @@ exports.createCourse = async (req, res) => {
 
     res.status(201).json(course);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("Lỗi khi thêm khóa học:", err);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 
@@ -72,3 +73,5 @@ exports.getInstructorStats = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+console.log("Dữ liệu nhận được từ frontend:", req.body);
+console.log("Thông tin người dùng:", req.user);

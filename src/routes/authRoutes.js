@@ -10,42 +10,34 @@ const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{4,}$/;
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Đăng ký
-router.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+router.post('/register', async (req, res) => {
+  const { username, email, password, role } = req.body;
 
-  if (!username || username.length < 4) {
-    return res.status(400).json({ error: "Tên tài khoản phải từ 4 ký tự." });
-  }
-  if (!email || !emailRegex.test(email)) {
-    return res.status(400).json({ error: "Email không hợp lệ." });
-  }
-  if (!password || !passwordRegex.test(password)) {
-    return res.status(400).json({
-      error: "Mật khẩu cần có chữ hoa, thường, số, ký tự đặc biệt và >= 4 ký tự."
-    });
+  if (!['student', 'instructor'].includes(role)) {
+    return res.status(400).json({ error: 'Vai trò không hợp lệ.' });
   }
 
   try {
     const existingUser = await User.findOne({ email });
-    const existingUsername = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email đã tồn tại.' });
+    }
 
-    if (existingUser) return res.status(400).json({ error: "Email đã tồn tại." });
-    if (existingUsername) return res.status(400).json({ error: "Tên tài khoản đã tồn tại." });
-
-    const newUser = new User({ username, email, password });
+    const newUser = new User({ username, email, password, role });
     await newUser.save();
 
-    const token = jwt.sign({ id: newUser._id }, JWT_SECRET, { expiresIn: "1d" });
+    const token = jwt.sign({ id: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(201).json({
       token,
       user: {
         username: newUser.username,
-        email: newUser.email
-      }
+        email: newUser.email,
+        role: newUser.role,
+      },
     });
   } catch (error) {
-    res.status(500).json({ error: "Lỗi máy chủ." });
+    res.status(500).json({ error: 'Lỗi máy chủ.' });
   }
 });
 
