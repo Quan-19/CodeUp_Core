@@ -3,12 +3,11 @@ const User = require("../models/User");
 
 // Đăng ký người dùng
 exports.register = async (req, res) => {
-  const { username, email, password, role } = req.body;
+  const { username, email, password, role, profilePicture, bio } = req.body;
 
-  console.log("Đang đăng ký người dùng:", req.body);
+  console.log("Đang đăng ký người dùng:", req.body); // In ra req.body
 
   try {
-    // Kiểm tra email hoặc username đã tồn tại chưa
     const existingUser = await User.findOne({
       $or: [{ email }, { username }],
     });
@@ -19,12 +18,13 @@ exports.register = async (req, res) => {
         .json({ message: "Email hoặc username đã tồn tại" });
     }
 
-    // KHÔNG hash mật khẩu tại đây, để schema tự xử lý
     const user = new User({
       username,
       email,
       password,
       role,
+      profilePicture, // Gán profilePicture
+      bio, // Gán bio
     });
 
     await user.save();
@@ -62,6 +62,8 @@ exports.login = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        profilePicture: user.profilePicture, // Trả về profilePicture
+        bio: user.bio, // Trả về bio
       },
     });
   } catch (error) {

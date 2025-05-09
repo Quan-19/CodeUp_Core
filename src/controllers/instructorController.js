@@ -1,8 +1,7 @@
 const Course = require("../models/Course");
 const Enrollment = require("../models/Enrollment");
 
-// Tạo khóa học mới
-// Tạo khóa học mới
+
 exports.createCourse = async (req, res) => {
   try {
     const instructorId = req.user.id;
