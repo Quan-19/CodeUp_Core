@@ -11,6 +11,10 @@ const CourseSchema = new mongoose.Schema({
   imageUrl: String,
   instructor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // Bắt buộc
   published: { type: Boolean, default: false },
+  enrolledUsers: [{ 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: "User" 
+  }],
 }, { timestamps: true });
 
 module.exports = mongoose.model("Course", CourseSchema);

@@ -35,6 +35,7 @@ exports.authenticate = async (req, res, next) => {
 
     // Thêm thông tin người dùng và vai trò vào req
     req.user = user;
+    req.user.id = user._id; 
     req.user.role = role; // Thêm vai trò vào req.user
 
     next();
