@@ -1,61 +1,73 @@
-// src/controllers/authController.js
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-const createToken = (user) => {
-  return jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "7d" });
-};
-
-exports.login = async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const user = await User.findOne({ email });
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
-    }
-    const token = createToken(user);
-    res.json({ token, user: { id: user._id, email: user.email } });
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi server", details: err.message });
-  }
-};
-
+// Đăng ký người dùng
 exports.register = async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, role, profilePicture, bio } = req.body;
 
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{4,}$/;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!username || username.length < 4) {
-    return res.status(400).json({ error: "Tên tài khoản phải từ 4 ký tự trở lên" });
-  }
-
-  if (!email || !emailRegex.test(email)) {
-    return res.status(400).json({ error: "Email không hợp lệ" });
-  }
-
-  if (!password || !passwordRegex.test(password)) {
-    return res.status(400).json({
-      error: "Mật khẩu phải từ 4 ký tự, có chữ in hoa, thường, số và ký tự đặc biệt"
-    });
-  }
+  console.log("Đang đăng ký người dùng:", req.body); // In ra req.body
 
   try {
-    const existingEmail = await User.findOne({ email });
-    const existingUser = await User.findOne({ username });
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }],
+    });
 
-    if (existingEmail) return res.status(400).json({ error: "Email đã được sử dụng" });
-    if (existingUser) return res.status(400).json({ error: "Tên tài khoản đã tồn tại" });
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ message: "Email hoặc username đã tồn tại" });
+    }
 
-    const user = new User({ username, email, password });
+    const user = new User({
+      username,
+      email,
+      password,
+      role,
+      profilePicture, // Gán profilePicture
+      bio, // Gán bio
+    });
+
     await user.save();
 
-    const token = createToken(user);
-    res.status(201).json({ token, user: { id: user._id, username: user.username, email: user.email } });
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi server", details: err.message });
+    res.status(201).json({ message: "Đăng ký thành công" });
+  } catch (error) {
+    console.error("Lỗi khi đăng ký:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi khi đăng ký người dùng" });
   }
 };
 
+// Đăng nhập người dùng
+exports.login = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: "Email không tồn tại" });
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch)
+      return res.status(400).json({ message: "Mật khẩu không đúng" });
+
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.status(200).json({
+      message: "Đăng nhập thành công",
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        profilePicture: user.profilePicture, // Trả về profilePicture
+        bio: user.bio, // Trả về bio
+      },
+    });
+  } catch (error) {
+    console.error("Lỗi khi đăng nhập:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi khi đăng nhập" });
+  }
+};

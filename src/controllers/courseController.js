@@ -1,69 +1,62 @@
-// src/controllers/courseController.js
+// courseController.js
+const Course = require('../models/Course');
+const User = require('../models/User');
+const Instructor = require('../models/instructor.model');
 
-const Course = require("../models/Course");
-
-// GET /api/courses
-exports.getCourses = async (req, res) => {
-  try {
-    const courses = await Course.find({}, "title price description"); // Chỉ lấy 3 trường
-    res.json(courses);
-  } catch (error) {
-    res.status(500).json({ error: "Lỗi khi lấy danh sách khóa học" });
-  }
-};
-
-// GET /api/courses/:id
-exports.getCourseById = async (req, res) => {
-  try {
-    const course = await Course.findById(req.params.id);
-    if (!course) {
-      return res.status(404).json({ error: "Không tìm thấy khóa học" });
-    }
-    res.json(course);
-  } catch (error) {
-    res.status(500).json({ error: "Lỗi khi lấy chi tiết khóa học" });
-  }
-};
-
-// POST /api/courses
 exports.createCourse = async (req, res) => {
   try {
-    const {
+    const { title, description, instructorId } = req.body;
+
+    // Tạo khóa học mới
+    const course = new Course({
       title,
       description,
-      category,
-      level,
-      price,
-      duration,
-      imageUrl
-    } = req.body;
+      instructor: instructorId,
+    });
 
-    // Kiểm tra các trường bắt buộc
-    if (!title || !description || !category || price == null || !duration) {
-      return res.status(400).json({
-        error: "Vui lòng điền đầy đủ các trường: title, description, category, price, duration."
-      });
+    await course.save();
+
+    // Tìm instructor
+    const instructor = await Instructor.findById(instructorId);
+
+    if (!instructor) {
+      return res.status(404).json({ message: 'Không tìm thấy instructor' });
     }
 
-    // Tạo mới khóa học
-    const newCourse = new Course({
-      title,
-      description,
-      category,
-      level,
-      price,
-      duration,
-      imageUrl
-    });
+    // Tăng số lượng khóa học đã tạo
+    instructor.numberOfCoursesCreated += 1;
 
-    await newCourse.save();
+    // Thêm ID khóa học vào mảng coursesTaught của instructor
+    instructor.coursesTaught.push(course._id);
+    await instructor.save();
 
-    res.status(201).json(newCourse);
-  } catch (err) {
-    console.error("Lỗi khi thêm khóa học:", err);
-    res.status(400).json({
-      error: "Không thể thêm khóa học",
-      details: err.message
-    });
+    res.status(201).json({ message: 'Khóa học đã được tạo thành công', course });
+  } catch (error) {
+    console.error('Lỗi khi tạo khóa học:', error);
+    res.status(500).json({ message: 'Đã xảy ra lỗi khi tạo khóa học' });
+  }
+};
+
+exports.enrollStudent = async (req, res) => {
+  try {
+    const { studentId, courseId } = req.body;
+
+    // Tìm student và khóa học
+    const student = await User.findById(studentId);
+    const course = await Course.findById(courseId);
+
+    if (!student || !course) {
+      return res.status(404).json({ message: 'Không tìm thấy student hoặc khóa học' });
+    }
+
+    // Thêm ID khóa học vào mảng enrolledCourses của student
+    student.enrolledCourses.push(course._id);
+    await student.save();
+
+    res.status(200).json({ message: 'Đăng ký khóa học thành công' });
+
+  } catch (error) {
+    console.error('Lỗi khi đăng ký khóa học:', error);
+    res.status(500).json({ message: 'Đã xảy ra lỗi khi đăng ký khóa học' });
   }
 };

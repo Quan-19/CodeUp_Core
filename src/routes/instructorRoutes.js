@@ -6,15 +6,6 @@ const { authenticate } = require('../middlewares/auth');
 const { requireRole } = require('../middlewares/role');
 
 // Chỉ cho phép người dạy tạo khóa học
-router.post('/courses', authenticate, requireRole('instructor'), async (req, res) => {
-  try {
-    const course = new Course({ ...req.body, instructor: req.user.id });
-    await course.save();
-    res.status(201).json(course);
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
-  }
-});
 
 router.put('/courses/:id/content', authenticate, requireRole('instructor'), async (req, res) => {
   const { id: courseId } = req.params;
