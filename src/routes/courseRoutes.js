@@ -1,4 +1,3 @@
-// backend/routes/courseRoutes.js
 const express = require("express");
 const router = express.Router();
 const Course = require("../models/Course");
@@ -14,24 +13,37 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ GET khóa học theo ID: /api/courses/:id
+// ✅ GET khóa học theo ID: /api/courses/:id?userId=abc123
 router.get("/:id", async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id);
+    const course = await Course.findById(req.params.id)
+      .populate('instructor');
+
     if (!course) {
       return res.status(404).json({ message: "Không tìm thấy khóa học" });
     }
 
-    const detail = await CourseDetail.findOne({ courseId: course._id });
+    const { userId } = req.query;
 
-    res.json({
+    // Kiểm tra quyền truy cập
+    if (!userId || !course.enrolledUsers.includes(userId)) {
+      return res.status(403).json({ message: "Bạn chưa mua khóa học này" });
+    }
+
+    // Lấy chi tiết khóa học riêng
+    const details = await CourseDetail.findOne({ courseId: course._id });
+
+    const responseData = {
       ...course.toObject(),
-      details: detail || null,
-    });
+      details: details || {}
+    };
+
+    res.json(responseData);
   } catch (err) {
     res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 });
+
 
 // ✅ POST tạo mới khóa học: /api/courses
 router.post("/", async (req, res) => {
@@ -63,10 +75,11 @@ router.post("/", async (req, res) => {
       duration,
       imageUrl,
       instructor,
+      enrolledUsers: [], // thêm mặc định
     });
     await newCourse.save();
 
-    // Lưu chi tiết khóa học nếu có
+    // Nếu có chi tiết khóa học thì lưu
     if (details) {
       const newDetail = new CourseDetail({
         courseId: newCourse._id,

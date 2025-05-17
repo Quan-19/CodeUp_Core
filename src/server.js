@@ -22,18 +22,21 @@ app.use(express.json());
 
 // Tạo QR thanh toán
 app.post("/api/create-qr", async (req, res) => {
+  console.log("Received body:", req.body);
   try {
-    console.log("Yêu cầu body:", req.body); // Ghi log toàn bộ body
-    const { courseId } = req.body;
+    const { courseId, userId } = req.body;
 
-    if (!courseId) {
-      return res.status(400).json({ message: "courseId không được cung cấp" });
+    if (!courseId || !userId) {
+      return res.status(400).json({ message: "Thiếu courseId hoặc userId" });
     }
 
     const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({ message: "Không tìm thấy khóa học" });
     }
+
+    // Tạo chuỗi txnRef để chứa cả courseId và userId, ví dụ: courseId_userId
+    const txnRef = `${courseId}_${userId}`;
 
     const vnpay = new VNPay({
       tmnCode: "0DGDY7EQ",
@@ -48,10 +51,10 @@ app.post("/api/create-qr", async (req, res) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const vnpayResponse = await vnpay.buildPaymentUrl({
-      vnp_Amount: course.price ,
+      vnp_Amount: course.price, // nhân 100 nếu là VNĐ
       vnp_IpAddr: "127.0.0.1",
-      vnp_TxnRef: courseId,
-      vnp_OrderInfo: `Mua khóa học ${courseId}`,
+      vnp_TxnRef: txnRef,
+      vnp_OrderInfo: `Mua khóa học ${course.title}`,
       vnp_OrderType: ProductCode.Other,
       vnp_ReturnUrl: "http://localhost:5000/api/check-payment-vnpay",
       vnp_Locale: VnpLocale.VN,
@@ -62,26 +65,65 @@ app.post("/api/create-qr", async (req, res) => {
     return res.status(201).json({ url: vnpayResponse });
   } catch (error) {
     console.error("Lỗi khi tạo QR:", error);
-    return res.status(500).json({ message: "Lỗi server", error: error.message });
+    return res
+      .status(500)
+      .json({ message: "Lỗi server", error: error.message });
   }
 });
 
 // Kiểm tra thanh toán
 app.get("/api/check-payment-vnpay", async (req, res) => {
-  const { vnp_TxnRef } = req.query;
-
   try {
-    const course = await Course.findById(vnp_TxnRef);
-    if (course) {
-      course.published = true;
-      await course.save();
-      return res.status(200).json({ message: "Thanh toán thành công", course });
-    } else {
-      return res.status(404).json({ message: "Không tìm thấy khóa học" });
+    const { vnp_TxnRef } = req.query;
+    const [courseId, userId] = vnp_TxnRef.split("_");
+
+    // Tìm course và user
+    const course = await Course.findById(courseId)
+      .populate("details")
+      .populate("instructor");
+
+    const user = await User.findById(userId);
+
+    if (!course || !user) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy khóa học hoặc người dùng" });
     }
+
+    // Đảm bảo enrolledUsers và enrolledCourses là mảng
+    if (!Array.isArray(course.enrolledUsers)) {
+      course.enrolledUsers = [];
+    }
+    if (!Array.isArray(user.enrolledCourses)) {
+      user.enrolledCourses = [];
+    }
+
+    const { ObjectId } = mongoose.Types;
+    const userObjectId = new ObjectId(userId);
+    const courseObjectId = new ObjectId(courseId);
+
+    // Kiểm tra nếu user chưa có trong enrolledUsers
+    if (!course.enrolledUsers.some((id) => id.equals(userObjectId))) {
+      course.enrolledUsers.push(userObjectId);
+      await course.save();
+
+      user.enrolledCourses.push(courseObjectId);
+      await user.save();
+    }
+
+    // Trả về dữ liệu đầy đủ
+    return res.status(200).json({
+      message: "Thanh toán thành công",
+      course: {
+        ...course.toObject(),
+        details: course.details || {},
+      },
+    });
   } catch (error) {
     console.error("Lỗi khi kiểm tra thanh toán:", error);
-    return res.status(500).json({ message: "Lỗi server", error: error.message });
+    return res
+      .status(500)
+      .json({ message: "Lỗi server", error: error.message });
   }
 });
 
@@ -90,19 +132,6 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/uploads", express.static("uploads"));
-
-// Lấy course theo ID
-app.get("/api/courses/:id", async (req, res) => {
-  try {
-    const course = await Course.findById(req.params.id);
-    if (!course) {
-      return res.status(404).json({ message: "Không tìm thấy khóa học" });
-    }
-    res.json(course);
-  } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-});
 
 // Tạo tài khoản admin mặc định
 const createDefaultAdmin = async () => {
