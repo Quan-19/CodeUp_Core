@@ -6,6 +6,7 @@ const app = express();
 
 const Course = require("./models/Course");
 const User = require("./models/User");
+const Payment = require("./models/Payment");
 
 const courseRoutes = require("./routes/courseRoutes");
 const authRoutes = require("./routes/authRoutes");
@@ -27,10 +28,12 @@ app.use(express.json());
 app.post("/api/create-qr", async (req, res) => {
   try {
     const { courseId, userId } = req.body;
-    if (!courseId || !userId) return res.status(400).json({ message: "Thiếu thông tin" });
+    if (!courseId || !userId)
+      return res.status(400).json({ message: "Thiếu thông tin" });
 
     const course = await Course.findById(courseId);
-    if (!course) return res.status(404).json({ message: "Không tìm thấy khóa học" });
+    if (!course)
+      return res.status(404).json({ message: "Không tìm thấy khóa học" });
 
     const txnRef = `${courseId}_${userId}`;
 
@@ -68,7 +71,8 @@ app.post("/api/create-qr", async (req, res) => {
 // ✅ Kiểm tra thanh toán và chuyển về React home
 app.get("/api/check-payment-vnpay", async (req, res) => {
   try {
-    const { vnp_TxnRef } = req.query;
+    const { vnp_TxnRef, vnp_Amount, vnp_BankCode, vnp_TransactionNo } =
+      req.query;
     const [courseId, userId] = vnp_TxnRef.split("_");
 
     const course = await Course.findById(courseId);
@@ -91,6 +95,16 @@ app.get("/api/check-payment-vnpay", async (req, res) => {
         user.enrolledCourses.push(courseObjectId);
         await user.save();
       }
+
+      // ✅ Lưu đơn hàng vào DB
+      await Payment.create({
+        user: userId,
+        course: courseId,
+        amount: Number(vnp_Amount) / 100, // vnp_Amount trả về là x100
+        paymentMethod: "VNPay",
+        transactionId: vnp_TxnRef,
+        status: "success",
+      });
 
       paymentStatus = "success";
     }
