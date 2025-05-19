@@ -7,6 +7,7 @@ const CourseDetailSchema = new mongoose.Schema({
   syllabus: [String],
   video: [String],
   content: String,
+  
 
 });
 

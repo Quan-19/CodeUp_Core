@@ -2,19 +2,24 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
 const authMiddleware = async (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-
-  if (!token) return res.status(401).json({ message: "Không có token" });
-
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-    if (!user) return res.status(401).json({ message: "Token không hợp lệ" });
+    const userId = req.params.id || req.body.userId || req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ message: 'Thiếu ID người dùng' });
+    }
+
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+    }
 
     req.user = user;
     next();
-  } catch (err) {
-    res.status(401).json({ message: "Token không hợp lệ" });
+  } catch (error) {
+    console.error('Lỗi xác thực:', error);
+    res.status(500).json({ message: 'Lỗi server' });
   }
 };
 

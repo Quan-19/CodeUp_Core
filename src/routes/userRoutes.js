@@ -3,6 +3,7 @@ const router = express.Router();
 const Course = require('../models/Course');
 const Enrollment = require('../models/Enrollment');
 const { authenticate } = require('../middlewares/auth');
+const userController = require('../controllers/userController');
 
 router.get('/courses', authenticate, async (req, res) => {
     const { search } = req.query;
@@ -40,5 +41,16 @@ router.post('/enrollments', authenticate, async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+// Lấy danh sách người dùng
+router.get('/', userController.getAllUsers);
+
+// Lấy người dùng theo ID
+router.get('/:id', userController.getUserById);
+
+// Xoá người dùng
+router.delete('/:userId', userController.deleteUser);
+
+// Cập nhật người dùng
+router.put('/:userId', userController.updateUser);
 
 module.exports = router;

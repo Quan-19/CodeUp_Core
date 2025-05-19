@@ -19,22 +19,26 @@ router.get('/courses', async (req, res) => {
   }
 });
 
-// Tạo khóa học mới
-router.post('/courses', async (req, res) => {
+// Lấy danh sách tất cả người dùng
+router.get('/users', async (req, res) => {
   try {
-    const course = new Course(req.body);
-    await course.save();
-    res.status(201).json(course);
+    const users = await User.find();
+    res.json(users);
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
 
-// Cập nhật thông tin khóa học
-router.put('/courses/:id', async (req, res) => {
+// Xóa người dùng
+router.delete('/users/:id', async (req, res) => {
   try {
-    const course = await Course.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(course);
+    const userId = req.params.id;
+    await Enrollment.deleteMany({ student: userId });
+    const user = await User.findByIdAndDelete(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+    }
+    res.json({ message: 'Người dùng đã được xóa' });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
@@ -43,25 +47,13 @@ router.put('/courses/:id', async (req, res) => {
 // Xóa khóa học
 router.delete('/courses/:id', async (req, res) => {
   try {
-    await Course.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Xóa khóa học thành công' });
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
-  }
-});
-
-// Thống kê thông tin cơ bản
-router.get('/stats', async (req, res) => {
-  try {
-    const totalUsers = await User.countDocuments();
-    const totalCourses = await Course.countDocuments();
-    const totalEnrollments = await Enrollment.countDocuments();
-
-    res.json({
-      totalUsers,
-      totalCourses,
-      totalEnrollments,
-    });
+    const courseId = req.params.id;
+    await Enrollment.deleteMany({ course: courseId });
+    const course = await Course.findByIdAndDelete(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Không tìm thấy khóa học' });
+    }
+    res.json({ message: 'Khóa học đã được xóa' });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }

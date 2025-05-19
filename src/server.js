@@ -1,13 +1,19 @@
 require("dotenv").config();
 const express = require("express");
-const app = express();
 const mongoose = require("mongoose");
 const cors = require("cors");
+const app = express();
+
 const Course = require("./models/Course");
+const User = require("./models/User");
+const Payment = require("./models/Payment");
+
 const courseRoutes = require("./routes/courseRoutes");
 const authRoutes = require("./routes/authRoutes");
-const User = require("./models/User");
 const uploadRoutes = require("./routes/uploadRoutes");
+const userRoutes = require("./routes/userRoutes");
+const adminRoutes = require('./routes/adminRoutes')
+
 const {
   VNPay,
   ignoreLogger,
@@ -20,20 +26,18 @@ const {
 app.use(cors());
 app.use(express.json());
 
-// Tạo QR thanh toán
+// ✅ Tạo QR thanh toán
 app.post("/api/create-qr", async (req, res) => {
   try {
-    console.log("Yêu cầu body:", req.body); // Ghi log toàn bộ body
-    const { courseId } = req.body;
-
-    if (!courseId) {
-      return res.status(400).json({ message: "courseId không được cung cấp" });
-    }
+    const { courseId, userId } = req.body;
+    if (!courseId || !userId)
+      return res.status(400).json({ message: "Thiếu thông tin" });
 
     const course = await Course.findById(courseId);
-    if (!course) {
+    if (!course)
       return res.status(404).json({ message: "Không tìm thấy khóa học" });
-    }
+
+    const txnRef = `${courseId}_${userId}`;
 
     const vnpay = new VNPay({
       tmnCode: "0DGDY7EQ",
@@ -48,10 +52,10 @@ app.post("/api/create-qr", async (req, res) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const vnpayResponse = await vnpay.buildPaymentUrl({
-      vnp_Amount: course.price ,
+      vnp_Amount: course.price,
       vnp_IpAddr: "127.0.0.1",
-      vnp_TxnRef: courseId,
-      vnp_OrderInfo: `Mua khóa học ${courseId}`,
+      vnp_TxnRef: txnRef,
+      vnp_OrderInfo: `Mua khóa học ${course.title}`,
       vnp_OrderType: ProductCode.Other,
       vnp_ReturnUrl: "http://localhost:5000/api/check-payment-vnpay",
       vnp_Locale: VnpLocale.VN,
@@ -61,67 +65,104 @@ app.post("/api/create-qr", async (req, res) => {
 
     return res.status(201).json({ url: vnpayResponse });
   } catch (error) {
-    console.error("Lỗi khi tạo QR:", error);
-    return res.status(500).json({ message: "Lỗi server", error: error.message });
+    console.error("Lỗi tạo QR:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 });
 
-// Kiểm tra thanh toán
+// ✅ Kiểm tra thanh toán và chuyển về React home
 app.get("/api/check-payment-vnpay", async (req, res) => {
-  const { vnp_TxnRef } = req.query;
-
   try {
-    const course = await Course.findById(vnp_TxnRef);
-    if (course) {
-      course.published = true;
-      await course.save();
-      return res.status(200).json({ message: "Thanh toán thành công", course });
-    } else {
-      return res.status(404).json({ message: "Không tìm thấy khóa học" });
+    const { vnp_TxnRef, vnp_Amount, vnp_BankCode, vnp_TransactionNo } =
+      req.query;
+    const [courseId, userId] = vnp_TxnRef.split("_");
+
+    const course = await Course.findById(courseId);
+    const user = await User.findById(userId);
+
+    let paymentStatus = "failed";
+
+    if (course && user) {
+      if (!Array.isArray(course.enrolledUsers)) course.enrolledUsers = [];
+      if (!Array.isArray(user.enrolledCourses)) user.enrolledCourses = [];
+
+      const { ObjectId } = mongoose.Types;
+      const userObjectId = new ObjectId(userId);
+      const courseObjectId = new ObjectId(courseId);
+
+      if (!course.enrolledUsers.some((id) => id.equals(userObjectId))) {
+        course.enrolledUsers.push(userObjectId);
+        await course.save();
+
+        user.enrolledCourses.push(courseObjectId);
+        await user.save();
+      }
+
+      // ✅ Lưu đơn hàng vào DB
+      await Payment.create({
+        user: userId,
+        course: courseId,
+        amount: Number(vnp_Amount) / 100, // vnp_Amount trả về là x100
+        paymentMethod: "VNPay",
+        transactionId: vnp_TxnRef,
+        status: "success",
+      });
+
+      paymentStatus = "success";
     }
+
+    res.send(`
+      <html>
+        <body>
+          <script>
+            window.opener.postMessage({ paymentStatus: '${paymentStatus}' }, "*");
+            window.close();
+          </script>
+          <p>Đang xử lý...</p>
+        </body>
+      </html>
+    `);
   } catch (error) {
-    console.error("Lỗi khi kiểm tra thanh toán:", error);
-    return res.status(500).json({ message: "Lỗi server", error: error.message });
+    console.error("Lỗi kiểm tra thanh toán:", error);
+    res.send(`
+      <html>
+        <body>
+          <script>
+            window.opener.postMessage({ paymentStatus: 'failed' }, "*");
+            window.close();
+          </script>
+          <p>Thanh toán thất bại. Đóng cửa sổ.</p>
+        </body>
+      </html>
+    `);
   }
 });
 
-// Các routes khác
+// Các route còn lại
 app.use("/api/courses", courseRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/uploads", express.static("uploads"));
+app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 
-// Lấy course theo ID
-app.get("/api/courses/:id", async (req, res) => {
-  try {
-    const course = await Course.findById(req.params.id);
-    if (!course) {
-      return res.status(404).json({ message: "Không tìm thấy khóa học" });
-    }
-    res.json(course);
-  } catch (err) {
-    res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-});
-
-// Tạo tài khoản admin mặc định
+// Tạo admin mặc định
 const createDefaultAdmin = async () => {
   const adminEmail = "admin@codeup.com";
   const adminPassword = "Admin@123";
-  const adminRole = "admin";
-
   const existingAdmin = await User.findOne({ email: adminEmail });
+
   if (!existingAdmin) {
     const admin = new User({
       username: "admin",
       email: adminEmail,
       password: adminPassword,
-      role: adminRole,
+      role: "admin",
     });
     await admin.save();
-    console.log("Tài khoản admin mặc định đã được tạo.");
+    console.log("Admin mặc định đã tạo.");
   } else {
-    console.log("Tài khoản admin đã tồn tại.");
+    console.log("Admin đã tồn tại.");
   }
 };
 
@@ -129,13 +170,10 @@ const createDefaultAdmin = async () => {
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(async () => {
-    console.log("Đã kết nối với MongoDB");
+    console.log("Đã kết nối MongoDB");
     await createDefaultAdmin();
+    app.listen(process.env.PORT || 5000, () =>
+      console.log("Server đang chạy cổng", process.env.PORT || 5000)
+    );
   })
-  .catch((err) => console.error("Lỗi kết nối MongoDB:", err));
-
-// Khởi động server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server đang chạy trên cổng ${PORT}`);
-});
+  .catch((err) => console.error("Lỗi MongoDB:", err));

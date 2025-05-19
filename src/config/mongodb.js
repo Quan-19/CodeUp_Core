@@ -31,4 +31,3 @@ export const GET_DB = () => {
     }
     return CodeupDatabaseInstance
 }
-
