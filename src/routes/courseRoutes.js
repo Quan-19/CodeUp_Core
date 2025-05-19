@@ -95,4 +95,17 @@ router.post("/", async (req, res) => {
   }
 });
 
+//Xóa khóa học
+router.delete("/:id", async (req, res) => {
+  try {
+    const course = await Course.findByIdAndDelete(req.params.id);
+    if (!course) {
+      return res.status(404).json({ message: "Không tìm thấy khóa học" });
+    }
+    res.json({ message: "Xóa khóa học thành công" });
+  } catch (err) {
+    console.error("Lỗi khi xóa khóa học:", err);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+});
 module.exports = router;

@@ -122,3 +122,35 @@ exports.enrollStudent = async (req, res) => {
     return res.status(500).json({ message: "Đã xảy ra lỗi khi đăng ký khóa học", error });
   }
 };
+
+//xóa khóa học
+exports.deleteCourse = async (req, res) => {
+  try {
+    const courseId = req.params.id;
+
+    // Tìm khóa học theo ID
+    const course = await Course.findById(courseId);
+
+    if (!course) {
+      return res.status(404).json({ message: "Không tìm thấy khóa học" });
+    }
+
+    // Xóa khóa học
+    await Course.findByIdAndDelete(courseId);
+
+    // Cập nhật số lượng khóa học của giảng viên
+    const instructor = await Instructor.findById(course.instructor);
+    if (instructor) {
+      instructor.numberOfCoursesCreated -= 1;
+      instructor.coursesTaught = instructor.coursesTaught.filter(
+        (courseId) => courseId.toString() !== course._id.toString()
+      );
+      await instructor.save();
+    }
+
+    return res.status(200).json({ message: "Khóa học đã được xóa thành công" });
+  } catch (error) {
+    console.error("Lỗi khi xóa khóa học:", error);
+    return res.status(500).json({ message: "Đã xảy ra lỗi khi xóa khóa học", error });
+  }
+};

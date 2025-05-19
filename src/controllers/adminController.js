@@ -32,3 +32,27 @@ export const getStatistics = async (req, res) => {
   ]);
   res.json({ users, courses, totalCoursesSold: sales[0]?.total || 0 });
 };
+
+//lấy danh sách người dùng
+export const getUsers = async (req, res) => {
+  const users = await UserModel.find();
+  res.json(users);
+};
+
+//lấy danh sách khóa học
+export const getCourses = async (req, res) => {
+  const courses = await CourseModel.find();
+  res.json(courses);
+};
+
+//xóa người dùng
+export const deleteUser = async (req, res) => {
+  await UserModel.findByIdAndDelete(req.params.id);
+  res.json({ message: 'Xóa người dùng thành công' });
+}
+
+//Xóa khóa học
+export const deleteCourseById = async (req, res) => {
+  await CourseModel.findByIdAndDelete(req.params.id);
+  res.json({ message: 'Xóa khóa học thành công' });
+}
