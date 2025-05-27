@@ -81,5 +81,17 @@ exports.getInstructorStats = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-console.log("Dữ liệu nhận được từ frontend:", req.body);
-console.log("Thông tin người dùng:", req.user);
+
+// Lấy danh sách khóa học của người dạy
+exports.getInstructorCourses = async (req, res) => {
+  try {
+    const instructorId = req.user.id;
+
+    // Lấy danh sách khóa học của người dạy
+    const courses = await Course.find({ instructor: instructorId });
+
+    res.json(courses);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

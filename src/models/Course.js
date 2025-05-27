@@ -14,7 +14,9 @@ const CourseSchema = new mongoose.Schema({
   details: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "CourseDetail"
-  }
+  },
+  averageRating: { type: Number, default: 0 },
+  ratingCount: { type: Number, default: 0 },
 }, { timestamps: true });
 
 // Middleware tự động thêm instructor vào enrolledUsers nếu chưa có

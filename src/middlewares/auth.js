@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
+// Middleware để xác thực người dùng và phân quyền
 exports.authenticate = async (req, res, next) => {
   try {
     const token = req.header('Authorization').replace('Bearer ', '');
@@ -35,8 +36,9 @@ exports.authenticate = async (req, res, next) => {
 
     // Thêm thông tin người dùng và vai trò vào req
     req.user = user;
-    req.user.id = user._id; 
+    req.user.id = user._id;
     req.user.role = role; // Thêm vai trò vào req.user
+
 
     next();
   } catch (err) {
