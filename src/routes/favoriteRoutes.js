@@ -42,5 +42,22 @@ router.get("/", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Lỗi máy chủ" });
   }
 });
+// Kiểm tra xem một course có trong danh sách yêu thích không
+router.get("/check", authMiddleware, async (req, res) => {
+  const userId = req.user._id;
+  const { courseId } = req.query;
+
+  if (!courseId) {
+    return res.status(400).json({ message: "Thiếu courseId" });
+  }
+
+  try {
+    const favorite = await Favorite.findOne({ userId, courseId });
+    res.json({ isFavorite: !!favorite });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi máy chủ khi kiểm tra yêu thích" });
+  }
+});
 
 module.exports = router;

@@ -1,6 +1,6 @@
 // instructor.model.js
 const mongoose = require("mongoose");
-const User = require("./user.model");
+const User = require("./User"); // Giả sử User là model đã được định nghĩa
 
 // Lấy các trường chung từ UserSchema
 const { username, email, profilePicture, bio, role, password } =

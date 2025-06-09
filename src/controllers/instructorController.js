@@ -1,7 +1,5 @@
 const Course = require("../models/Course");
 const Enrollment = require("../models/Enrollment");
-
-
 exports.createCourse = async (req, res) => {
   try {
     const instructorId = req.user.id;
@@ -95,3 +93,4 @@ exports.getInstructorCourses = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+ 

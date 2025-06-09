@@ -3,11 +3,12 @@ const router = express.Router();
 const Course = require('../models/Course');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
-const { authenticate } = require('../middlewares/auth');
+const { authMiddleware } = require('../middlewares/auth');
 const { requireRole } = require('../middlewares/role');
+const Payment = require('~/models/Payment');
 
 // Chỉ admin mới được phép truy cập
-router.use(authenticate, requireRole('admin'));
+router.use(authMiddleware, requireRole('admin'));
 
 // Lấy danh sách tất cả khóa học
 router.get('/courses', async (req, res) => {
@@ -58,5 +59,161 @@ router.delete('/courses/:id', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
+//thống kê số lượng khóa học của instructor trong một tháng
+router.get('/instructor-stats/:instructorId', async (req, res) => {
+  try {
+    const instructorId = req.params.instructorId;
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const courses = await Course.find({
+      instructor: instructorId,
+      createdAt: { $gte: startDate }
+    });
+
+    res.json({ count: courses.length });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+// Thống kê số lượng người dùng đăng ký khóa học trong một tháng
+router.get('/enrollment-stats/:courseId', async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const enrollments = await Enrollment.find({
+      course: courseId,
+      createdAt: { $gte: startDate }
+    });
+
+    res.json({ count: enrollments.length });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+// Thống kê tổng số khóa học và người dùng
+router.get('/stats', async (req, res) => {
+  try {
+    const courseCount = await Course.countDocuments();
+    const userCount = await User.countDocuments();
+    res.json({ courseCount, userCount });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+// Thống kê số lượng người dùng đăng ký khóa học trong một tháng
+router.get('/enrollment-stats', async (req, res) => {
+  try {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const enrollments = await Enrollment.find({
+      createdAt: { $gte: startDate }
+    });
+
+    res.json({ count: enrollments.length });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+// Thống kê số lượng khóa học trong một tháng
+router.get('/course-stats', async (req, res) => {
+  try {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const courses = await Course.find({
+      createdAt: { $gte: startDate }
+    });
+
+    res.json({ count: courses.length });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+// Thống kê top instructors trong tháng
+router.get('/top-instructors', async (req, res) => {
+  try {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+    
+    const topInstructors = await Course.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: "$instructor",
+          courseCount: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { courseCount: -1 }
+      },
+      {
+        $limit: 5 // Lấy top 5 instructors
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "instructorInfo"
+        }
+      },
+      {
+        $unwind: "$instructorInfo"
+      },
+      {
+        $project: {
+          _id: 0,
+          instructorId: "$_id",
+          instructorName: "$instructorInfo.username",
+          courseCount: 1
+        }
+      }
+    ]);
+
+    res.json(topInstructors);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+// Thống kê doanh thu theo tháng
+router.get('/revenue-stats', async (req, res) => {
+  try {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 5);// Lấy doanh thu trong 6 tháng gần nhất
+    startDate.setDate(1); // Bắt đầu từ ngày đầu tiên của tháng
+
+    const payments = await Payment.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+          status: 'success'
+        }
+      },
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          totalRevenue: { $sum: "$amount" }
+        }
+      },
+      {
+        $sort: { _id: 1 } // Sắp xếp theo tháng
+      }
+    ]);
+
+    res.json(payments);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+}
+);
 
 module.exports = router;
