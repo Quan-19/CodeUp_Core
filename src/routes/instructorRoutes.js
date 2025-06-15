@@ -25,28 +25,6 @@ router.put('/courses/:id/content', authenticate, requireRole('instructor'), asyn
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
-
-
-const checkInstructor = async (req, res, next) => {
-  try {
-    const { userId } = req.params; // Hoặc req.query.userId tùy cách bạn gửi
-    
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: 'Không tìm thấy người dùng' });
-    }
-    
-    if (user.role !== 'instructor') {
-      return res.status(403).json({ message: 'Bạn không có quyền truy cập' });
-    }
-    
-    req.user = user; // Lưu user vào request để sử dụng ở các middleware sau
-    next();
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
-  }
-};
-
 // Lấy danh sách khóa học bằng user ID (không yêu cầu token)
 router.get('/courses/:userId', async (req, res) => {
   try {
@@ -90,113 +68,365 @@ router.get('/courses/:id/statistics', authenticate, requireRole('instructor'), a
   }
 });
 
-// Lấy danh sách học viên đã mua khóa học của instructor (không yêu cầu token)
+// Lấy danh sách học viên đã mua khóa học của instructor (có phân trang và lọc)
 router.get('/students/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const { page = 1, limit = 10, search = '' } = req.query;
 
     // Tìm các khóa học do instructor tạo
     const courses = await Course.find({ instructor: userId }).select('_id title');
     const courseIds = courses.map(c => c._id);
 
     // Tìm các thanh toán thành công liên quan đến các khóa học đó
-    const payments = await Payment.find({ 
-      course: { $in: courseIds }, 
-      status: 'success' 
-    }).populate('user', 'username email').populate('course', 'title');
+    const paymentsQuery = {
+      course: { $in: courseIds },
+      status: 'success'
+    };
+
+    // Tìm kiếm học viên nếu có
+    if (search) {
+      const keywords = search.trim().split(/\s+/); // Tách từ khóa theo dấu cách
+      const searchConditions = keywords.map(keyword => ({
+        $or: [
+          { username: { $regex: keyword, $options: 'i' } },
+          { email: { $regex: keyword, $options: 'i' } }
+        ]
+      }));
+
+      const users = await User.find({
+        $and: searchConditions
+      }).select('_id');
+
+      paymentsQuery.user = { $in: users.map(u => u._id) };
+    }
+
+    // Lấy danh sách các thanh toán phù hợp
+    const payments = await Payment.find(paymentsQuery)
+      .populate('user', 'username email avatar')
+      .populate('course', 'title')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    // Đếm tổng số học viên duy nhất
+    const allPayments = await Payment.find(paymentsQuery).select('user');
+    const uniqueStudentIds = new Set(allPayments.map(p => p.user.toString()));
+    const totalStudents = uniqueStudentIds.size;
 
     // Gom học viên và các khóa học họ đã mua
     const studentMap = new Map();
     payments.forEach(p => {
-      if (!studentMap.has(p.user._id.toString())) {
-        studentMap.set(p.user._id.toString(), {
+      const userIdStr = p.user._id.toString();
+      if (!studentMap.has(userIdStr)) {
+        studentMap.set(userIdStr, {
           _id: p.user._id,
           username: p.user.username,
           email: p.user.email,
+          avatar: p.user.avatar,
           enrolledCourses: []
         });
       }
-      studentMap.get(p.user._id.toString()).enrolledCourses.push({
+      studentMap.get(userIdStr).enrolledCourses.push({
+        courseId: p.course._id,
         courseTitle: p.course.title,
         enrolledAt: p.createdAt
       });
     });
 
     const students = Array.from(studentMap.values());
-    res.json(students);
+
+    res.json({
+      students,
+      total: totalStudents,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalStudents / limit)
+    });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi khi lấy danh sách học viên', error: err.message });
   }
 });
+
+// Thống kê doanh thu theo khóa học (có phân trang và lọc)
 router.get('/revenue/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const { page = 1, limit = 10, search = '' } = req.query;
 
-    const courses = await Course.find({ instructor: userId }).select('_id title price');
+    // Tìm kiếm khóa học nếu có
+    const courseQuery = { instructor: userId };
+    if (search) {
+      courseQuery.title = { $regex: search, $options: 'i' };
+    }
+
+    const courses = await Course.find(courseQuery)
+      .select('_id title price thumbnail')
+      .skip((page - 1) * limit)
+      .limit(limit);
+
     const courseIds = courses.map(c => c._id);
+    const totalCourses = await Course.countDocuments(courseQuery);
 
-    const payments = await Payment.find({ 
-      course: { $in: courseIds }, 
-      status: 'success' 
-    });
-
-    const revenueMap = {};
-
-    payments.forEach(p => {
-      const courseId = p.course.toString();
-      if (!revenueMap[courseId]) {
-        const course = courses.find(c => c._id.toString() === courseId);
-        revenueMap[courseId] = {
-          courseTitle: course.title,
-          totalRevenue: 0
-        };
+    // Tính doanh thu cho từng khóa học
+    const revenueData = await Payment.aggregate([
+      { 
+        $match: { 
+          course: { $in: courseIds },
+          status: 'success' 
+        }
+      },
+      {
+        $group: {
+          _id: '$course',
+          totalRevenue: { $sum: '$amount' },
+          totalStudents: { $sum: 1 },
+          lastPayment: { $max: '$createdAt' }
+        }
       }
-      revenueMap[courseId].totalRevenue += p.amount;
+    ]);
+
+    const result = courses.map(course => {
+      const revenueInfo = revenueData.find(r => r._id.toString() === course._id.toString()) || {
+        totalRevenue: 0,
+        totalStudents: 0,
+        lastPayment: null
+      };
+      
+      return {
+        courseId: course._id,
+        courseTitle: course.title,
+        courseThumbnail: course.thumbnail,
+        price: course.price,
+        totalRevenue: revenueInfo.totalRevenue,
+        totalStudents: revenueInfo.totalStudents,
+        lastPayment: revenueInfo.lastPayment
+      };
     });
 
-    const revenueData = Object.values(revenueMap);
-    res.json(revenueData);
+    res.json({
+      revenueData: result,
+      total: totalCourses,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalCourses / limit)
+    });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi khi lấy doanh thu', error: err.message });
   }
 });
+
+// Thống kê doanh thu theo tháng (cải tiến với nhiều thông tin hơn)
 router.get('/revenue/monthly/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const { year = new Date().getFullYear() } = req.query;
 
     const courses = await Course.find({ instructor: userId }).select('_id title');
-    const courseMap = Object.fromEntries(courses.map(c => [c._id.toString(), c.title]));
+    const courseIds = courses.map(c => c._id);
 
-    const payments = await Payment.find({
-      course: { $in: Object.keys(courseMap) },
-      status: 'success'
-    });
+    // Lấy dữ liệu 12 tháng gần nhất
+    const monthlyData = await Payment.aggregate([
+      {
+        $match: {
+          course: { $in: courseIds },
+          status: 'success',
+          createdAt: { 
+            $gte: new Date(`${year}-01-01`),
+            $lt: new Date(`${parseInt(year) + 1}-01-01`)
+          }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          totalRevenue: { $sum: '$amount' },
+          totalEnrollments: { $sum: 1 },
+          topCourses: {
+            $push: {
+              course: '$course',
+              amount: '$amount'
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          monthName: {
+            $let: {
+              vars: {
+                monthsInVietnamese: [
+                  "Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", 
+                  "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8",
+                  "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"
+                ]
+              },
+              in: {
+                $arrayElemAt: [
+                  "$$monthsInVietnamese",
+                  { $subtract: ["$_id.month", 1] }
+                ]
+              }
+            }
+          }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
 
-    const monthlyRevenue = {};
+    // Xử lý thêm thông tin về khóa học nổi bật
+    const courseMap = new Map(courses.map(c => [c._id.toString(), c.title]));
+    const processedData = await Promise.all(monthlyData.map(async month => {
+      // Tìm khóa học có doanh thu cao nhất
+      const courseRevenue = {};
+      month.topCourses.forEach(item => {
+        const courseId = item.course.toString();
+        courseRevenue[courseId] = (courseRevenue[courseId] || 0) + item.amount;
+      });
 
-    payments.forEach(p => {
-      const courseId = p.course.toString();
-      const courseTitle = courseMap[courseId];
-      const month = new Date(p.createdAt).toISOString().slice(0, 7); // "YYYY-MM"
+      let topCourseId = null;
+      let topCourseRevenue = 0;
+      Object.entries(courseRevenue).forEach(([courseId, revenue]) => {
+        if (revenue > topCourseRevenue) {
+          topCourseId = courseId;
+          topCourseRevenue = revenue;
+        }
+      });
 
-      if (!monthlyRevenue[month]) monthlyRevenue[month] = {};
-      if (!monthlyRevenue[month][courseTitle]) monthlyRevenue[month][courseTitle] = 0;
+      return {
+        month: `${month._id.month}/${month._id.year}`,
+        monthName: month.monthName,
+        totalRevenue: month.totalRevenue,
+        totalEnrollments: month.totalEnrollments,
+        topCourse: topCourseId ? {
+          courseId: topCourseId,
+          courseTitle: courseMap.get(topCourseId),
+          revenue: topCourseRevenue,
+          percentage: Math.round((topCourseRevenue / month.totalRevenue) * 100)
+        } : null
+      };
+    }));
 
-      monthlyRevenue[month][courseTitle] += p.amount;
-    });
-
-    const data = Object.entries(monthlyRevenue).map(([month, courses]) => {
-      const row = { month };
-      for (const [courseTitle, revenue] of Object.entries(courses)) {
-        row[courseTitle] = revenue;
-      }
-      return row;
-    });
-
-    res.json(data);
+    res.json(processedData);
   } catch (err) {
     res.status(500).json({ message: 'Lỗi khi thống kê doanh thu theo tháng', error: err.message });
   }
 });
 
+// Thống kê tổng quan cho instructor
+router.get('/stats/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // 1. Thống kê tổng quan
+    const courses = await Course.find({ instructor: userId });
+    const courseIds = courses.map(c => c._id);
+    
+    const [totalStudents, totalRevenue, monthlyTrend] = await Promise.all([
+      // Tổng học viên
+      Enrollment.countDocuments({ course: { $in: courseIds } }),
+      // Tổng doanh thu
+      Payment.aggregate([
+        { 
+          $match: { 
+            course: { $in: courseIds },
+            status: 'success'
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amount' }
+          }
+        }
+      ]),
+      
+      // Xu hướng theo tháng (12 tháng gần nhất)
+      Payment.aggregate([
+        {
+          $match: {
+            course: { $in: courseIds },
+            status: 'success',
+            createdAt: { $gte: new Date(new Date().setFullYear(new Date().getFullYear() - 1)) }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' }
+            },
+            total: { $sum: '$amount' },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1 } }
+      ])
+    ]);
+
+    res.json({
+      totalCourses: courses.length,
+      totalStudents,
+      totalRevenue: totalRevenue[0]?.total || 0,
+      monthlyTrend: monthlyTrend.map(item => ({
+        month: `${item._id.month}/${item._id.year}`,
+        revenue: item.total,
+        enrollments: item.count
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi khi lấy thống kê', error: err.message });
+  }
+});
+
+// Lấy danh sách học viên đã mua khóa học của instructor theo khóa học (có phân trang)
+router.get('/courses/:courseId/students', async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Kiểm tra khóa học có tồn tại không
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Khóa học không tồn tại' });
+    }
+
+    // Lấy danh sách thanh toán cho khóa học này
+    const payments = await Payment.find({ 
+      course: courseId,
+      status: 'success'
+    })
+    .populate('user', 'username email avatar')
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit));
+
+    const totalStudents = await Payment.countDocuments({ 
+      course: courseId,
+      status: 'success'
+    });
+
+    const students = payments.map(payment => ({
+      _id: payment.user._id,
+      username: payment.user.username,
+      email: payment.user.email,
+      avatar: payment.user.avatar,
+      purchasedAt: payment.createdAt,
+      amount: payment.amount
+    }));
+
+    res.json({
+      students,
+      total: totalStudents,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalStudents / limit)
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi khi lấy danh sách học viên', error: err.message });
+  }
+});
 module.exports = router;
