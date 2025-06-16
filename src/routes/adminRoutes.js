@@ -77,6 +77,7 @@ router.get('/instructor-stats/:instructorId', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
 // Thống kê số lượng người dùng đăng ký khóa học trong một tháng
 router.get('/enrollment-stats/:courseId', async (req, res) => {
   try {
@@ -94,6 +95,7 @@ router.get('/enrollment-stats/:courseId', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
 // Thống kê tổng số khóa học và người dùng
 router.get('/stats', async (req, res) => {
   try {
@@ -104,6 +106,7 @@ router.get('/stats', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
 // Thống kê số lượng người dùng đăng ký khóa học trong một tháng
 router.get('/enrollment-stats', async (req, res) => {
   try {
@@ -119,6 +122,7 @@ router.get('/enrollment-stats', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
 // Thống kê số lượng khóa học trong một tháng
 router.get('/course-stats', async (req, res) => {
   try {
@@ -134,6 +138,7 @@ router.get('/course-stats', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
 // Thống kê top instructors trong tháng
 router.get('/top-instructors', async (req, res) => {
   try {
@@ -184,36 +189,55 @@ router.get('/top-instructors', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
-// Thống kê doanh thu theo tháng
 router.get('/revenue-stats', async (req, res) => {
   try {
+    const endDate = new Date();
     const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 5);// Lấy doanh thu trong 6 tháng gần nhất
-    startDate.setDate(1); // Bắt đầu từ ngày đầu tiên của tháng
-
+    startDate.setMonth(startDate.getMonth() - 6); // Lấy dữ liệu 6 tháng
+    
     const payments = await Payment.aggregate([
       {
         $match: {
-          createdAt: { $gte: startDate },
+          createdAt: { $gte: startDate, $lte: endDate },
           status: 'success'
         }
       },
       {
         $group: {
-          _id: { $month: "$createdAt" },
+          _id: { 
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" }
+          },
           totalRevenue: { $sum: "$amount" }
         }
       },
       {
-        $sort: { _id: 1 } // Sắp xếp theo tháng
+        $sort: { "_id.year": 1, "_id.month": 1 }
       }
     ]);
 
-    res.json(payments);
+    // Tính toán phần trăm thay đổi
+    let revenueStats = payments.map((item, index, array) => {
+      const currentMonth = new Date(item._id.year, item._id.month - 1);
+      const prevMonthItem = array.find(prev => {
+        const prevMonth = new Date(prev._id.year, prev._id.month - 1);
+        return prevMonth.getTime() === new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)).getTime();
+      });
+      
+      const changePercent = prevMonthItem 
+        ? ((item.totalRevenue - prevMonthItem.totalRevenue) / prevMonthItem.totalRevenue) * 100
+        : 0;
+      
+      return {
+        ...item,
+        changePercent: parseFloat(changePercent.toFixed(2))
+      };
+    });
+
+    res.json(revenueStats);
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
-}
-);
+});
 
 module.exports = router;
