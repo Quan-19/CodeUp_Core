@@ -155,4 +155,8 @@ router.put("/:id", async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 });
+// Tìm kiếm khóa học
+const { searchCourses } = require('../controllers/courseController');
+router.get('/search', searchCourses);
+
 module.exports = router;

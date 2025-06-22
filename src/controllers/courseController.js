@@ -341,4 +341,36 @@ exports.updateCourse = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+// Tìm kiếm khóa học theo từ khóa
+exports.searchCourses = async (req, res) => {
+  try {
+    const { keyword, category, level, minPrice, maxPrice } = req.query;
+    
+    const query = {};
+    
+    if (keyword) {
+      query.title = { $regex: keyword, $options: 'i' };
+    }
+    
+    if (category) {
+      query.category = category;
+    }
+    
+    if (level) {
+      query.level = level;
+    }
+    
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = Number(minPrice);
+      if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+    
+    const courses = await Course.find(query);
+    res.json(courses);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Search failed', error });
+  }
+};
 
