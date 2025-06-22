@@ -13,7 +13,7 @@
         ref: "User",
         required: true,
       },
-      published: { type: Boolean, default: false },
+      published: { type: Boolean, default: true },
       enrolledUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
       details: {
         type: mongoose.Schema.Types.ObjectId,
@@ -28,7 +28,7 @@
   // Middleware tự động thêm instructor vào enrolledUsers nếu chưa có
   CourseSchema.pre("save", function (next) {
     const instructorId = this.instructor?.toString();
-    const adminId = "68163487bd331ae1a426130b";
+    const adminId = "684eb1ede622505e20f94474";
 
     if (
       instructorId &&

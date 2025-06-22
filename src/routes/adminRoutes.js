@@ -5,26 +5,43 @@ const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 const { authMiddleware } = require('../middlewares/auth');
 const { requireRole } = require('../middlewares/role');
-const Payment = require('~/models/Payment');
+const Payment = require('../models/Payment');
 
 // Chỉ admin mới được phép truy cập
 router.use(authMiddleware, requireRole('admin'));
 
-// Lấy danh sách tất cả khóa học
-router.get('/courses', async (req, res) => {
+// Lấy danh sách tất cả người dùng với filter
+router.get('/users', async (req, res) => {
   try {
-    const courses = await Course.find();
-    res.json(courses);
+    const { role, active, search } = req.query;
+    const filter = {};
+    
+    if (role) filter.role = role;
+    if (active) filter.active = active === 'true';
+    if (search) {
+      filter.$or = [
+        { username: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    const users = await User.find(filter);
+    res.json(users);
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
 
-// Lấy danh sách tất cả người dùng
-router.get('/users', async (req, res) => {
+// Cập nhật vai trò người dùng
+router.put('/users/:id/role', async (req, res) => {
   try {
-    const users = await User.find();
-    res.json(users);
+    const { role } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true }
+    );
+    res.json(user);
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
@@ -45,6 +62,26 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
+// Lấy danh sách khóa học với filter
+router.get('/courses', async (req, res) => {
+  try {
+    const { category, published, instructor, search } = req.query;
+    const filter = {};
+    
+    if (category) filter.category = category;
+    if (published) filter.published = published === 'true';
+    if (instructor) filter.instructor = instructor;
+    if (search) {
+      filter.title = { $regex: search, $options: 'i' };
+    }
+    
+    const courses = await Course.find(filter).populate('instructor', 'username');
+    res.json(courses);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
 // Xóa khóa học
 router.delete('/courses/:id', async (req, res) => {
   try {
@@ -60,48 +97,13 @@ router.delete('/courses/:id', async (req, res) => {
   }
 });
 
-//thống kê số lượng khóa học của instructor trong một tháng
-router.get('/instructor-stats/:instructorId', async (req, res) => {
-  try {
-    const instructorId = req.params.instructorId;
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1);
-
-    const courses = await Course.find({
-      instructor: instructorId,
-      createdAt: { $gte: startDate }
-    });
-
-    res.json({ count: courses.length });
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
-  }
-});
-
-// Thống kê số lượng người dùng đăng ký khóa học trong một tháng
-router.get('/enrollment-stats/:courseId', async (req, res) => {
-  try {
-    const courseId = req.params.courseId;
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1);
-
-    const enrollments = await Enrollment.find({
-      course: courseId,
-      createdAt: { $gte: startDate }
-    });
-
-    res.json({ count: enrollments.length });
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
-  }
-});
-
 // Thống kê tổng số khóa học và người dùng
 router.get('/stats', async (req, res) => {
   try {
     const courseCount = await Course.countDocuments();
     const userCount = await User.countDocuments();
-    res.json({ courseCount, userCount });
+    const instructorCount = await User.countDocuments({ role: 'instructor' });
+    res.json({ courseCount, userCount, instructorCount });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
@@ -161,7 +163,7 @@ router.get('/top-instructors', async (req, res) => {
         $sort: { courseCount: -1 }
       },
       {
-        $limit: 5 // Lấy top 5 instructors
+        $limit: 5
       },
       {
         $lookup: {
@@ -189,11 +191,13 @@ router.get('/top-instructors', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
+// Thống kê doanh thu theo tháng
 router.get('/revenue-stats', async (req, res) => {
   try {
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 6); // Lấy dữ liệu 6 tháng
+    startDate.setMonth(startDate.getMonth() - 6);
     
     const payments = await Payment.aggregate([
       {
@@ -216,7 +220,6 @@ router.get('/revenue-stats', async (req, res) => {
       }
     ]);
 
-    // Tính toán phần trăm thay đổi
     let revenueStats = payments.map((item, index, array) => {
       const currentMonth = new Date(item._id.year, item._id.month - 1);
       const prevMonthItem = array.find(prev => {
@@ -235,6 +238,90 @@ router.get('/revenue-stats', async (req, res) => {
     });
 
     res.json(revenueStats);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
+// Thống kê doanh thu theo giảng viên
+router.get('/instructor-revenue', async (req, res) => {
+  try {
+    const result = await Payment.aggregate([
+      {
+        $match: { status: 'success' }
+      },
+      {
+        $lookup: {
+          from: 'courses',
+          localField: 'course',
+          foreignField: '_id',
+          as: 'courseInfo'
+        }
+      },
+      {
+        $unwind: '$courseInfo'
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'courseInfo.instructor',
+          foreignField: '_id',
+          as: 'instructorInfo'
+        }
+      },
+      {
+        $unwind: '$instructorInfo'
+      },
+      {
+        $group: {
+          _id: '$courseInfo.instructor',
+          instructorName: { $first: '$instructorInfo.username' },
+          totalRevenue: { $sum: '$amount' },
+          courseCount: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { totalRevenue: -1 }
+      }
+    ]);
+    
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
+// Thống kê số lượng khóa học của instructor trong một tháng
+router.get('/instructor-stats/:instructorId', async (req, res) => {
+  try {
+    const instructorId = req.params.instructorId;
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const courses = await Course.find({
+      instructor: instructorId,
+      createdAt: { $gte: startDate }
+    });
+
+    res.json({ count: courses.length });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
+// Thống kê số lượng người dùng đăng ký khóa học trong một tháng (theo courseId)
+router.get('/enrollment-stats/:courseId', async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const enrollments = await Enrollment.find({
+      course: courseId,
+      createdAt: { $gte: startDate }
+    });
+
+    res.json({ count: enrollments.length });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
