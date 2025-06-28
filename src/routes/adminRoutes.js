@@ -327,6 +327,37 @@ router.get('/enrollment-stats/:courseId', async (req, res) => {
   }
 });
 
+// Thống kê khóa học theo tháng
+router.get('/course-monthly-stats', async (req, res) => {
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 12); // Lấy dữ liệu 12 tháng gần nhất
+    
+    const result = await Course.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: { 
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 }
+      }
+    ]);
 
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
 
 module.exports = router;
