@@ -7,15 +7,17 @@ const app = express();
 const Course = require("./models/Course");
 const User = require("./models/User");
 const Payment = require("./models/Payment");
-const quizProgressRoutes = require('./routes/quizProgressRoutes');
+const quizProgressRoutes = require("./routes/quizProgressRoutes");
 const courseRoutes = require("./routes/courseRoutes");
 const authRoutes = require("./routes/authRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const userRoutes = require("./routes/userRoutes");
-const adminRoutes = require('./routes/adminRoutes')
+const adminRoutes = require("./routes/adminRoutes");
 const ratingRoutes = require("./routes/ratingRoutes");
 const favoriteRoutes = require("./routes/favoriteRoutes");
 const instructorRoutes = require("./routes/instructorRoutes");
+const path = require("path");
+
 const courseController = require("./controllers/courseController");
 const {
   VNPay,
@@ -27,8 +29,8 @@ const {
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));  // tăng lên 10MB (hoặc tùy bạn)
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: "10mb" })); // tăng lên 10MB (hoặc tùy bạn)
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 // ✅ Tạo QR thanh toán
 app.post("/api/create-qr", async (req, res) => {
@@ -61,7 +63,7 @@ app.post("/api/create-qr", async (req, res) => {
       vnp_TxnRef: txnRef,
       vnp_OrderInfo: `Mua khóa học ${course.title}`,
       vnp_OrderType: ProductCode.Other,
-      vnp_ReturnUrl: "http://localhost:5000/api/check-payment-vnpay",
+      vnp_ReturnUrl: "http://localhost:3000/payment-status",
       vnp_Locale: VnpLocale.VN,
       vnp_CreateDate: dateFormat(new Date()),
       vnp_ExpireDate: dateFormat(tomorrow),
@@ -77,8 +79,7 @@ app.post("/api/create-qr", async (req, res) => {
 // ✅ Kiểm tra thanh toán và chuyển về React home
 app.get("/api/check-payment-vnpay", async (req, res) => {
   try {
-    const { vnp_TxnRef, vnp_Amount, vnp_BankCode, vnp_TransactionNo } =
-      req.query;
+    const { vnp_TxnRef, vnp_Amount, vnp_ResponseCode } = req.query;
     const [courseId, userId] = vnp_TxnRef.split("_");
 
     const course = await Course.findById(courseId);
@@ -86,7 +87,8 @@ app.get("/api/check-payment-vnpay", async (req, res) => {
 
     let paymentStatus = "failed";
 
-    if (course && user) {
+    // Nếu mã phản hồi từ VNPay là thành công ("00") và user/course tồn tại
+    if (vnp_ResponseCode === "00" && course && user) {
       if (!Array.isArray(course.enrolledUsers)) course.enrolledUsers = [];
       if (!Array.isArray(user.enrolledCourses)) user.enrolledCourses = [];
 
@@ -102,11 +104,10 @@ app.get("/api/check-payment-vnpay", async (req, res) => {
         await user.save();
       }
 
-      // ✅ Lưu đơn hàng vào DB
       await Payment.create({
         user: userId,
         course: courseId,
-        amount: Number(vnp_Amount) / 100, // vnp_Amount trả về là x100
+        amount: Number(vnp_Amount) / 100,
         paymentMethod: "VNPay",
         transactionId: vnp_TxnRef,
         status: "success",
@@ -115,30 +116,10 @@ app.get("/api/check-payment-vnpay", async (req, res) => {
       paymentStatus = "success";
     }
 
-    res.send(`
-      <html>
-        <body>
-          <script>
-            window.opener.postMessage({ paymentStatus: '${paymentStatus}' }, "*");
-            window.close();
-          </script>
-          <p>Đang xử lý...</p>
-        </body>
-      </html>
-    `);
+    res.json({ paymentStatus, courseId });
   } catch (error) {
-    console.error("Lỗi kiểm tra thanh toán:", error);
-    res.send(`
-      <html>
-        <body>
-          <script>
-            window.opener.postMessage({ paymentStatus: 'failed' }, "*");
-            window.close();
-          </script>
-          <p>Thanh toán thất bại. Đóng cửa sổ.</p>
-        </body>
-      </html>
-    `);
+    console.error("Lỗi khi kiểm tra thanh toán:", error);
+    res.status(500).json({ paymentStatus: "failed" });
   }
 });
 
@@ -147,13 +128,14 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/uploads", express.static("uploads"));
-app.use('/api/users', userRoutes);
-app.use('/api/admin', adminRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/api/favorites", favoriteRoutes);
 app.use("/api/ratings", ratingRoutes);
 app.use("/api/instructor", instructorRoutes);
 app.use("/api/courses", courseRoutes);
-app.use('/api/quiz-progress', quizProgressRoutes);
+app.use("/api/quiz-progress", quizProgressRoutes);
 // Thêm 2 route quiz:
 app.get("/api/courses/:id/quiz", courseController.getQuizByCourseId);
 app.post("/api/courses/:id/quiz", courseController.createOrUpdateQuiz);

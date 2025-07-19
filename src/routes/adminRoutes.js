@@ -6,7 +6,9 @@ const Enrollment = require('../models/Enrollment');
 const { authMiddleware } = require('../middlewares/auth');
 const { requireRole } = require('../middlewares/role');
 const Payment = require('../models/Payment');
-
+const Favorite = require('../models/Favorite');
+const CourseDetail = require('../models/CourseDetail');
+const mongoose = require('mongoose');
 // Chỉ admin mới được phép truy cập
 router.use(authMiddleware, requireRole('admin'));
 
@@ -83,17 +85,38 @@ router.get('/courses', async (req, res) => {
 });
 
 // Xóa khóa học
+
+// Sửa lại route xóa khóa học
 router.delete('/courses/:id', async (req, res) => {
+  let session;
   try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+
     const courseId = req.params.id;
-    await Enrollment.deleteMany({ course: courseId });
-    const course = await Course.findByIdAndDelete(courseId);
-    if (!course) {
-      return res.status(404).json({ message: 'Không tìm thấy khóa học' });
-    }
-    res.json({ message: 'Khóa học đã được xóa' });
+
+    // Xóa các bản ghi liên quan trong transaction
+    await Course.deleteOne({ _id: courseId }).session(session);
+    await CourseDetail.deleteOne({ courseId }).session(session);
+    await Enrollment.deleteMany({ course: courseId }).session(session);
+    await Payment.deleteMany({ course: courseId }).session(session);
+    await Favorite.deleteMany({ courseId }).session(session);
+
+    await session.commitTransaction();
+    res.json({ message: 'Khóa học và các dữ liệu liên quan đã được xóa thành công' });
   } catch (err) {
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
+    if (session) {
+      await session.abortTransaction();
+    }
+    console.error('Error deleting course:', err);
+    res.status(500).json({ 
+      message: 'Xóa khóa học thất bại', 
+      error: err.message 
+    });
+  } finally {
+    if (session) {
+      session.endSession();
+    }
   }
 });
 

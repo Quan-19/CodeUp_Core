@@ -8,7 +8,9 @@ const { authenticate } = require('../middlewares/auth');
 const { requireRole } = require('../middlewares/role');
 const mongoose = require('mongoose');
 const instructorController = require('../controllers/instructorController');
-
+const CourseDetail = require('~/models/CourseDetail');
+const Favorite = require('~/models/Favorite');
+const ratings = require('~/models/Rating');
 // Chỉ cho phép người dạy tạo khóa học
 router.put('/courses/:id/content', authenticate, requireRole('instructor'), async (req, res) => {
   const { id: courseId } = req.params;
@@ -427,6 +429,65 @@ router.get('/courses/:courseId/students', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: 'Lỗi khi lấy danh sách học viên', error: err.message });
+  }
+});
+// Route xóa khóa học chỉ sử dụng userId (không dùng token)
+router.delete('/courses/:userId/:courseId', async (req, res) => {
+  const { userId, courseId } = req.params;
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // 1. Kiểm tra quyền sở hữu
+    const course = await Course.findOne({ 
+      _id: courseId, 
+      instructor: userId 
+    }).session(session);
+
+    if (!course) {
+      await session.abortTransaction();
+      return res.status(403).json({ 
+        success: false,
+        message: 'Bạn không có quyền xóa khóa học này' 
+      });
+    }
+
+    // 2. Xóa tất cả dữ liệu liên quan trong transaction
+    await Promise.all([
+      // Xóa các bản ghi liên quan trực tiếp
+      Course.deleteOne({ _id: courseId }).session(session),
+      CourseDetail.deleteOne({ courseId }).session(session),
+      Enrollment.deleteMany({ course: courseId }).session(session),
+      Payment.deleteMany({ course: courseId }).session(session),
+      Favorite.deleteMany({ courseId }).session(session),
+      
+      // Cập nhật các bản ghi tham chiếu từ collection khác
+      User.updateMany(
+        { favorites: courseId },
+        { $pull: { favorites: courseId } }
+      ).session(session),
+      
+      User.updateMany(
+        { ratedCourses: courseId },
+        { $pull: { ratedCourses: courseId } }
+      ).session(session)
+    ]);
+
+    await session.commitTransaction();
+    res.json({ 
+      success: true,
+      message: 'Đã xóa khóa học và tất cả dữ liệu liên quan thành công' 
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    console.error('Lỗi khi xóa khóa học:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Lỗi khi xóa khóa học',
+      error: err.message 
+    });
+  } finally {
+    session.endSession();
   }
 });
 module.exports = router;
