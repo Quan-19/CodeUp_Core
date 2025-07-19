@@ -37,7 +37,7 @@ app.post("/api/create-qr", async (req, res) => {
   try {
     const { courseId, userId } = req.body;
     if (!courseId || !userId)
-      return res.status(400).json({ message: "Thiếu thông tin" });
+      return res.status(400).json({ message: "Đăng nhập để thực hiện chức năng này" });
 
     const course = await Course.findById(courseId);
     if (!course)
